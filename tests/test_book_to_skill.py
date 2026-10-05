@@ -1876,6 +1876,44 @@ class TestDocxTableReconstruction:
         out = extract_docx_with_zipfile(self._make_docx(tmp_path, body))
         assert out == "Before\nInside SDT\nAfter"
 
+    def test_dispatcher_uses_more_complete_output_for_sdt(self, tmp_path):
+        from book_to_skill.parsers import docx as docx_parser
+
+        body = (
+            self._para("Before")
+            + "<w:sdt><w:sdtContent>" + self._para("Inside SDT") + "</w:sdtContent></w:sdt>"
+            + self._para("After")
+        )
+        docx_path = self._make_docx(tmp_path, body)
+        with mock.patch.object(
+            docx_parser,
+            "extract_docx_with_python_docx",
+            return_value="Before\nAfter",
+        ):
+            text, method = docx_parser.extract_docx(docx_path)
+
+        assert method == "zipfile-docx"
+        assert text == "Before\nInside SDT\nAfter"
+
+    def test_dispatcher_keeps_preferred_parser_without_sdt(self, tmp_path):
+        from book_to_skill.parsers import docx as docx_parser
+
+        docx_path = self._make_docx(tmp_path, self._para("Ordinary document"))
+        with mock.patch.object(
+            docx_parser,
+            "extract_docx_with_python_docx",
+            return_value="Preferred parser output",
+        ), mock.patch.object(
+            docx_parser,
+            "extract_docx_with_zipfile",
+            wraps=docx_parser.extract_docx_with_zipfile,
+        ) as fallback:
+            text, method = docx_parser.extract_docx(docx_path)
+
+        assert method == "python-docx"
+        assert text == "Preferred parser output"
+        fallback.assert_not_called()
+
 
 class TestEpubSpineOrder:
     """The stdlib EPUB extractor reads content in spine order, with a safety net."""

@@ -125,6 +125,25 @@ def validate_docx_xml_safety(docx_path: str) -> None:
         raise ExtractionError(f"Error during security validation of DOCX archive: {e}")
 
 
+def _docx_has_sdt_content_control(docx_path: str) -> bool:
+    """Return whether document.xml contains a Word content control.
+
+    This is called only after the preferred parser has validated the archive.
+    If the document XML cannot be inspected, let the caller try the stdlib
+    parser as a best-effort fallback.
+    """
+    import xml.etree.ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(docx_path) as zf:
+            root = ET.fromstring(zf.read("word/document.xml"))
+    except (KeyError, OSError, zipfile.BadZipFile, ET.ParseError):
+        return True
+
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    return any(element.tag == f"{ns}sdt" for element in root.iter())
+
+
 def extract_docx(docx_path: str) -> tuple[str, str]:
     # Validation lives in each leaf parser (extract_docx_with_python_docx,
     # extract_docx_with_zipfile) so it runs exactly once regardless of which
@@ -133,7 +152,16 @@ def extract_docx(docx_path: str) -> tuple[str, str]:
     print("Trying python-docx...", end=" ", flush=True)
     text = extract_docx_with_python_docx(docx_path)
     if text and text.strip():
-        print("OK")
+        if _docx_has_sdt_content_control(docx_path):
+            print("OK; SDT content control detected")
+            print("Trying stdlib DOCX parser...", end=" ", flush=True)
+            fallback_text = extract_docx_with_zipfile(docx_path)
+            if fallback_text and len(fallback_text.strip()) > len(text.strip()):
+                print("OK (more complete output)")
+                return fallback_text, "zipfile-docx"
+            print("keeping python-docx result")
+        else:
+            print("OK")
         return text, "python-docx"
 
     print("not available")

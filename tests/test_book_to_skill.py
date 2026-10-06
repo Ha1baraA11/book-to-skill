@@ -2028,6 +2028,73 @@ class TestEpubSpineOrder:
         assert "AAA" in out and "BBB" in out
 
 
+def test_ebooklib_spine_order_without_optional_dependencies(monkeypatch):
+    """The preferred parser's spine logic runs in the dependency-free CI matrix."""
+    import types
+
+    from book_to_skill.parsers.epub import extract_with_ebooklib
+
+    item_document = 9
+
+    class FakeItem:
+        def __init__(self, item_id, content):
+            self.item_id = item_id
+            self.content = content
+
+        def get_type(self):
+            return item_document
+
+        def get_content(self):
+            return self.content
+
+    first = FakeItem("c1", "FIRST")
+    second = FakeItem("c2", "SECOND")
+    nav = FakeItem("nav", "NAVIGATION")
+
+    class FakeBook:
+        spine = [("c1", "yes"), ("c2", "yes")]
+
+        def __init__(self):
+            self.items = {item.item_id: item for item in (first, second, nav)}
+
+        def get_items_of_type(self, item_type):
+            assert item_type == item_document
+            # EPUB manifest order deliberately differs from the spine order.
+            return [second, first, nav]
+
+        def get_item_with_id(self, item_id):
+            return self.items.get(item_id)
+
+    book = FakeBook()
+
+    class FakeSoup:
+        def __init__(self, content, _parser):
+            self.content = content
+
+        def get_text(self, separator="\n"):
+            return self.content
+
+    ebooklib = types.ModuleType("ebooklib")
+    ebooklib.ITEM_DOCUMENT = item_document
+    epub = types.ModuleType("ebooklib.epub")
+    epub.read_epub = lambda _path: book
+    ebooklib.epub = epub
+    bs4 = types.ModuleType("bs4")
+    bs4.BeautifulSoup = FakeSoup
+    monkeypatch.setitem(sys.modules, "ebooklib", ebooklib)
+    monkeypatch.setitem(sys.modules, "ebooklib.epub", epub)
+    monkeypatch.setitem(sys.modules, "bs4", bs4)
+
+    text = extract_with_ebooklib("unused.epub")
+    assert text.index("FIRST") < text.index("SECOND") < text.index("NAVIGATION")
+
+    book.spine = [("c1", "yes"), ("missing", "yes"), ("c1", "yes")]
+    text_with_invalid_refs = extract_with_ebooklib("unused.epub")
+    assert text_with_invalid_refs.index("FIRST") < text_with_invalid_refs.index("SECOND")
+    assert text_with_invalid_refs.index("SECOND") < text_with_invalid_refs.index("NAVIGATION")
+    assert text_with_invalid_refs.count("FIRST") == 1
+
+
 class TestEbooklibEpubSpineOrder:
     """The preferred EPUB extractor follows the OPF spine as well."""
 

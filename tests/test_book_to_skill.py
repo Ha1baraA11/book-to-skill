@@ -1799,7 +1799,6 @@ class TestDocxTableReconstruction:
     _NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
     def _make_docx(self, tmp_path, body_xml):
-        import zipfile
         p = tmp_path / "t.docx"
         doc = (
             '<?xml version="1.0"?>'

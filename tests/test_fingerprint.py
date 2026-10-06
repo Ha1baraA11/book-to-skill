@@ -250,7 +250,8 @@ def test_reuse_duplicate_basenames_matches_hash_pair_multiplicity(tmp_path, monk
     reordered, reason = reuse_is_safe(
         [(second, second_hash), (first, first_hash)], metadata, current_mode="text"
     )
-    assert reordered, reason
+    assert not reordered
+    assert reason == "sources reordered"
 
     replaced, reason = reuse_is_safe(
         [(first, first_hash), (replacement, _sha256_file(str(replacement)))],
@@ -265,6 +266,31 @@ def test_reuse_duplicate_basenames_matches_hash_pair_multiplicity(tmp_path, monk
     )
     assert not duplicated
     assert "sources changed" in reason
+
+
+def test_cli_rebuilds_corpus_when_duplicate_sources_are_reordered(tmp_path, monkeypatch):
+    from book_to_skill.utils import _sha256_file
+
+    first_dir = tmp_path / "a"
+    second_dir = tmp_path / "b"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = _write(first_dir, "book.txt", "FIRST_CONTENT\n")
+    second = _write(second_dir, "book.txt", "SECOND_CONTENT\n")
+
+    metadata, out_dir = _extract_sources_metadata(tmp_path, monkeypatch, [first, second])
+    original_text = (out_dir / "full_text.txt").read_text(encoding="utf-8")
+    assert original_text.index("FIRST_CONTENT") < original_text.index("SECOND_CONTENT")
+    original_hashes = [source["sha256"] for source in metadata["sources"]]
+    assert original_hashes == [_sha256_file(str(first)), _sha256_file(str(second))]
+
+    reordered_metadata, _ = _extract_sources_metadata(
+        tmp_path, monkeypatch, [second, first]
+    )
+    rebuilt_text = (out_dir / "full_text.txt").read_text(encoding="utf-8")
+    assert rebuilt_text.index("SECOND_CONTENT") < rebuilt_text.index("FIRST_CONTENT")
+    rebuilt_hashes = [source["sha256"] for source in reordered_metadata["sources"]]
+    assert rebuilt_hashes == [_sha256_file(str(second)), _sha256_file(str(first))]
 
 
 def test_sha256_file_streams_across_chunks(tmp_path):

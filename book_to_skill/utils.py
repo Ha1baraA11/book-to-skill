@@ -990,7 +990,10 @@ def reuse_is_safe(current_inputs, metadata, current_mode):
             )
         recorded_pairs.append((filename, recorded_hash))
 
-    if Counter(recorded_pairs) != Counter(current_pairs):
+    if recorded_pairs != current_pairs:
+        if Counter(recorded_pairs) == Counter(current_pairs):
+            return False, "sources reordered"
+
         recorded_name_counts = Counter(filename for filename, _ in recorded_pairs)
         current_name_counts = Counter(filename for filename, _ in current_pairs)
         if all(count == 1 for count in recorded_name_counts.values()) and all(

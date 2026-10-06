@@ -1895,6 +1895,47 @@ class TestDocxTableReconstruction:
         assert method == "zipfile-docx"
         assert text == "Before\nInside SDT\nAfter"
 
+    def test_dispatcher_prefers_sdt_coverage_over_longer_output(self, tmp_path):
+        from book_to_skill.parsers import docx as docx_parser
+
+        body = (
+            self._para("Before")
+            + "<w:sdt><w:sdtContent>" + self._para("X") + "</w:sdtContent></w:sdt>"
+            + self._para("After")
+        )
+        docx_path = self._make_docx(tmp_path, body)
+        preferred = "Before\n" + "long ordinary paragraph " * 20 + "\nAfter"
+        with mock.patch.object(
+            docx_parser,
+            "extract_docx_with_python_docx",
+            return_value=preferred,
+        ):
+            text, method = docx_parser.extract_docx(docx_path)
+
+        assert len(text) < len(preferred)
+        assert method == "zipfile-docx"
+        assert text == "Before\nX\nAfter"
+
+    def test_dispatcher_keeps_preferred_when_fallback_adds_no_sdt_coverage(self, tmp_path):
+        from book_to_skill.parsers import docx as docx_parser
+
+        body = (
+            self._para("ordinary paragraph " * 20)
+            + "<w:sdt><w:sdtContent>" + self._para("Inside SDT") + "</w:sdtContent></w:sdt>"
+        )
+        docx_path = self._make_docx(tmp_path, body)
+        preferred = "Inside SDT"
+        with mock.patch.object(
+            docx_parser,
+            "extract_docx_with_python_docx",
+            return_value=preferred,
+        ):
+            text, method = docx_parser.extract_docx(docx_path)
+
+        assert len(docx_parser.extract_docx_with_zipfile(docx_path)) > len(preferred)
+        assert method == "python-docx"
+        assert text == preferred
+
     def test_dispatcher_keeps_preferred_parser_without_sdt(self, tmp_path):
         from book_to_skill.parsers import docx as docx_parser
 
